@@ -1,0 +1,448 @@
+/**
+ * JJTree template file created by SF JavaCC plugin 1.5.28+ wizard for JavaCC 1.5.0+
+ */options
+{
+  static = true;
+  IGNORE_CASE = true;
+}
+
+PARSER_BEGIN(MyNewGrammar)
+package sql;
+import java.util.Iterator;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+public class MyNewGrammar
+{
+  public static void main(String args [])
+  {
+    MyNewGrammar t = new MyNewGrammar(System.in);
+    System.out.println("please input sql sentences");
+    while(true){
+	try
+    {
+      System.out.print(">>");
+      SimpleNode node = t.Start();
+      new SemanticReader(node);
+      t.ReInit(System.in);
+    }
+    catch (Exception e)
+    {
+      System.out.println(e.getMessage());
+      t.ReInit(System.in);
+    }
+    }
+  }
+
+
+  public static void combineConditions(CSet set,Object a,Object b){
+	    set.put(a);
+	    set.put(b);
+  }
+}
+
+PARSER_END(MyNewGrammar)
+
+SKIP :
+{
+  " "
+| "\t"
+| "\n"
+| "\r"
+}
+
+TOKEN: {
+	//约束关键词
+	< P_KEY : "PRIMARY KEY" >|
+	< UNIQUE : "UNIQUE" >|
+	< CHECK :"CHECK" >
+}
+
+TOKEN://操作关键词
+{
+	< USE:"USE" >
+	| 
+	< SHOW:"SHOW" >
+	| 
+	< SELECT : "SELECT" >
+	|
+	< DROP:"DROP" >
+	|
+	< EXIT:"EXIT" >
+	|
+	< FROM : "FROM" >
+	|
+	< WHERE:"WHERE" >
+	|
+	< CREATE:"CREATE" >
+	|
+	< INSERT:"INSERT" >
+	|
+	< INTO:"INTO" >
+	|
+	< DELETE : "DELETE" >
+	|
+	< UPDATE : "UPDATE" >
+	|
+	< SET : "SET" >
+	|
+	< AND :"AND"|"&" >
+	|
+	< OR :"OR" | "|" >
+	|
+	< AS :"AS" > 
+}
+
+TOKEN: //保留字 id
+{	
+	< KW_TABLE : "TABLE">
+	|
+	< KW_DATABASE:"DATABASE" >
+	|
+	< KW_VIEW : "VIEW" >
+	| 
+	< STAR :"*" >
+	|
+	< VALUES:"values" >
+	| 
+	//类型关键词
+	< KW_BOOL:"BOOL" >|
+	< KW_STR :"STRING" >|
+	< KW_INT :"INT" >|
+	//类型
+	< NUM:(["0"-"9"])+ >
+	|	
+	< STR: "'" (~["'"])* "'" > //！！暂不支持中文 并且无法自动转义 ！！
+	|
+	< BOOL : "true"|"false" >
+	| 
+	< ID:(["A"-"Z","a"-"z","_"])(["0"-"9","A"-"Z","a"-"z","_"])* >
+}
+
+/** Root production. */
+
+SimpleNode Start() :
+{}
+{
+  Statement() ";"
+  {
+    return jjtThis;
+  }
+}
+
+void Statement():
+{ }
+{
+   Use()
+  |Show()  
+  |Create()
+  |Exit()
+  |Drop()
+  |Select()
+  |Insert()
+  |Delete()
+  |Update()
+}
+//-----退出----------
+void Exit():
+{ }
+{
+  < EXIT >
+}
+//-----使用数据库-----
+void Use():
+{ }
+{
+  < USE > DB()
+}
+//-------展示表------
+void Show(): { }
+{
+  < SHOW > < KW_TABLE >
+}
+
+/*--------------------------------------------------------*/
+//---------类型------------
+
+void Type(): {Token t;}
+{
+  (t=< KW_INT >|t=< KW_BOOL >|t=< KW_STR >)
+  {
+    jjtThis.setName(t.image);
+  }
+}
+
+void Table(): {Token t; }
+{
+  t = < ID >
+  {
+    jjtThis.setName(t.image);
+  }
+}
+
+void Tables(): { }
+{
+	Table() ["," Tables()]
+}
+
+String Table_Column(): {Token t,s=null;}
+{
+  t=< ID > ["." s=< ID >]
+  {
+    String result="";
+    result += t.image;
+    if(s!=null) {result+="."+s.image;}
+    jjtThis.setName(result);
+    return result;
+  } 
+}
+
+void Column(): {Token t; }
+{
+  t = < ID >
+   {
+    jjtThis.setName(t.image);
+  }
+}
+void DB(): {Token t;}
+{
+  t= < ID >
+   {
+    jjtThis.setName(t.image);
+  }
+}
+//--------------定义-----------
+void P_Key(): { }
+{
+  < P_KEY >
+}
+
+void Check(): {}
+{
+  < CHECK > operator() rightComp()
+  { jjtThis.setName("check");} 
+}
+
+void Unique(): { }
+{
+ < UNIQUE > 
+  { jjtThis.setName("unqiue");} 
+}
+
+void Constraint(): { }
+{
+  Unique()|Check()
+}
+
+void Definition(): { }
+{
+  Column() Type() [P_Key()|Check()|Unique()] _Definition()
+}
+//消除左递归
+void _Definition(): { }
+{
+  ["," Column()  Type() [Check()|Unique()] _Definition()]
+}
+//-------------------视图-----------------
+void View(): { }
+{
+  < KW_VIEW > Table() < AS > Select()
+}
+//-----------------创建语句-------------
+void Create(): { }
+{
+  < CREATE > (< KW_TABLE > Table() "(" Definition() ")"|< KW_DATABASE> DB() | View() )
+}
+
+/*--------------------------------------------------------*/
+//---------------选择目标-----------
+void Star_All(): { Token t;}
+{
+  t=< STAR >
+  {
+    jjtThis.setName(t.image);
+  }
+}
+void Target(): { }
+{
+  Star_All()| Table_Column() TargetFollow()
+}
+
+void TargetFollow(): { }
+{
+  [","Table_Column() TargetFollow()]
+}
+
+//----------------选择，删除，修改条件 引用Level1---------------
+
+String leftComp(): {String t="";}
+{
+  t = Table_Column()
+  {
+    return t;
+  }
+}
+
+String rightComp(): {String value;}
+{
+   value = String() { return value.replaceAll("'","");}
+  |value = Num() { return value;}
+  |value = Bool(){ return value;}
+  |value = Table_Column() { return value;}
+}
+
+String operator(): {Token op; }
+{
+  (op = "<"|op = ">"|op = ">="|op = "<="|op = "=="|op = "!=")
+  {
+    if(op.image.equals(">")){ op.image=">>"; }
+    if(op.image.equals("<")){ op.image="<<"; }
+    jjtThis.setName(op.image);
+    return op.image;
+  }
+}
+
+
+Condition Condition(): {String col,op,value;}
+{
+  col = leftComp() op = operator() value = rightComp()
+  {
+    Condition cond = new Condition(col,op,value);
+    SimpleNode node= (SimpleNode) jjtn000.jjtGetChild(2).jjtGetChild(0);
+    if(node.ntType().equals("Table_Column")){
+		cond.rightIsColumn();
+    }
+    return cond;
+  }
+}
+//AND 的优先级要高于 OR 引入非终结符来指定优先级
+void Conditions(): {Object cond = null;}
+{
+ 	cond = E()
+ 	{
+ 	  jjtThis.setConditions(cond);
+ 	}
+}
+
+Object E(): {Object cond1=null,cond2=null; }
+{
+   cond1= T()  cond2= _E()
+  {
+    CSet cond = new CSet(CSet.OR);
+    combineConditions(cond,cond1,cond2);
+    return cond;
+  }
+}
+
+Object _E(): { Object cond1=null,cond2=null;}
+{
+  [< OR > cond1 = T() cond2= _E()]
+  {
+    CSet cond = new CSet(CSet.OR);
+   combineConditions(cond,cond1,cond2);
+    return cond;
+  }
+}
+
+Object T(): {Object cond1=null,cond2=null;}
+{
+  cond1 = F() cond2 = _T()
+  {
+    CSet cond = new CSet(CSet.AND);
+    combineConditions(cond,cond1,cond2);
+    return cond;
+  }
+}
+
+Object _T(): {Object cond1=null,cond2=null; }
+{
+  [ < AND > cond1 =F() cond2= _T()]
+  {
+    CSet cond = new CSet(CSet.AND);
+    combineConditions(cond,cond1,cond2);
+    return cond;
+  }
+}
+
+Object F(): {Object cond = null;}
+{
+	(cond = Condition()|"("cond = E() ")")
+	{
+	  return cond;
+	}
+}
+
+//-----选择语句---------------------
+void Select():
+{ }
+{
+   < SELECT > Target() < FROM > Tables() [< WHERE > Conditions()]
+}
+
+//-------------------Drop语句-----------
+void Drop(): {Token t;}
+{
+  < DROP > ( t=< KW_DATABASE >| t=< KW_TABLE >) DropTarget()
+  {
+    jjtThis.setName(t.image);
+  }
+}
+void DropTarget():{Token t;}
+{
+	t=< ID >
+	{
+	  jjtThis.setName(t.image);
+	}
+}
+//--------------------Insert语句-----------
+void Insert(): { }
+{
+  < INSERT > < INTO > Table()  (< VALUES > "(" KEY_VALUE() ")"| "(" A() C() B() ")")
+}
+void A() :{ }
+{
+  [","] Column()
+}
+void C(): { }
+{
+  A() C() B() | ")" < VALUES > "(" 
+}
+void B() :{ }
+{
+  [","] Value()
+}
+
+String String(): {Token t;}
+{
+  t=< STR > { jjtThis.setName(t.image);return t.image;}
+}
+String Num(): {Token t;}
+{
+  t=< NUM > { jjtThis.setName(t.image);return t.image;}
+}
+String Bool(): {Token t;}
+{
+  t=< BOOL > { jjtThis.setName(t.image);return t.image;}
+}
+void Value(): {}
+{
+  String()|Num()|Bool()|Column()
+}
+void KEY_VALUE(): { }
+{
+  Column() Value() ["," KEY_VALUE()]
+}
+//---------------------Delete语句----------
+void Delete(): { }
+{
+  < DELETE > <FROM > Table() DeleteFollow()
+}
+void DeleteFollow():{}
+{
+  [< WHERE > Conditions()]
+}
+//-----------------------Update语句---------
+void Update():{}
+{
+	< UPDATE > Table() < SET > KEY_VALUE() [< WHERE > Conditions()]
+}
